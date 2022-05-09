@@ -81,6 +81,7 @@ old_socksocket = None
 old_ssl_wrap_socket = None
 old_sslwrap_simple = None
 old_sslsocket = None
+old_sslcontext_wrap_socket = None
 
 if PY3:  # pragma: no cover
     basestring = (bytes, str)
@@ -96,6 +97,11 @@ try:  # pragma: no cover
     if not PY3:
         old_sslwrap_simple = ssl.sslwrap_simple
     old_sslsocket = ssl.SSLSocket
+    try:
+        old_sslcontext_wrap_socket = ssl.SSLContext.wrap_socket
+    except AttributeError:
+        pass
+
 except ImportError:  # pragma: no cover
     ssl = None
 
@@ -267,7 +273,7 @@ class fakesock(object):
             return {
                 'notAfter': shift.strftime('%b %d %H:%M:%S GMT'),
                 'subjectAltName': (
-                    ('DNS', '*%s' % self._host),
+                    ('DNS', '*.%s' % self._host),
                     ('DNS', self._host),
                     ('DNS', '*'),
                 ),
@@ -751,7 +757,10 @@ class URIMatcher(object):
 
     def __init__(self, uri, entries, match_querystring=False):
         self._match_querystring = match_querystring
-        if type(uri).__name__ == 'SRE_Pattern':
+        regex_types = ('SRE_Pattern', 'org.python.modules.sre.PatternObject', 'Pattern')
+        is_regex = type(uri).__name__ in regex_types
+
+        if is_regex:
             self.regex = uri
             result = urlsplit(uri.pattern)
             if result.scheme == 'https':
@@ -989,6 +998,11 @@ class httpretty(HttpBaseClass):
             ssl.__dict__['wrap_socket'] = old_ssl_wrap_socket
             ssl.__dict__['SSLSocket'] = old_sslsocket
 
+            try:
+                ssl.SSLContext.wrap_socket = old_sslcontext_wrap_socket
+            except AttributeError:
+                pass
+
             if not PY3:
                 ssl.sslwrap_simple = old_sslwrap_simple
                 ssl.__dict__['sslwrap_simple'] = old_sslwrap_simple
@@ -1031,6 +1045,14 @@ class httpretty(HttpBaseClass):
         if ssl:
             ssl.wrap_socket = fake_wrap_socket
             ssl.SSLSocket = FakeSSLSocket
+
+            try:
+                def fake_sslcontext_wrap_socket(cls, *args, **kwargs):
+                    return fake_wrap_socket(*args, **kwargs)
+
+                ssl.SSLContext.wrap_socket = fake_sslcontext_wrap_socket
+            except AttributeError:
+                pass
 
             ssl.__dict__['wrap_socket'] = fake_wrap_socket
             ssl.__dict__['SSLSocket'] = FakeSSLSocket
