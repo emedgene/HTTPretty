@@ -751,7 +751,10 @@ class URIMatcher(object):
 
     def __init__(self, uri, entries, match_querystring=False):
         self._match_querystring = match_querystring
-        if type(uri).__name__ == 'SRE_Pattern':
+        regex_types = ('SRE_Pattern', 'org.python.modules.sre.PatternObject', 'Pattern')
+        is_regex = type(uri).__name__ in regex_types
+
+        if is_regex:
             self.regex = uri
             result = urlsplit(uri.pattern)
             if result.scheme == 'https':
